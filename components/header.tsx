@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CustomConnectButton } from "./CustomConnectButton";
 
@@ -20,13 +20,21 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-black/20 backdrop-blur-xl">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-2">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#E84142]">
-              <ShieldCheck className="h-5 w-5 text-white" />
-            </div>
-            <span className="hidden text-lg font-bold tracking-tight text-white sm:inline-block">
-              Tink Protocol
-            </span>
+          {/* <Link href="/" className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#E84142]">
+                <ShieldCheck className="h-5 w-5 text-white" />
+              </div>
+              <span className="hidden text-lg font-bold tracking-tight text-white sm:inline-block">
+                Tink Protocol
+              </span>
+            </Link> */}
+          <Link href="/" className="flex items-center">
+            <Image
+              src="/tink-protocol-logo.webp"
+              alt="Tink Protocol Logo"
+              width={80}
+              height={30}
+            />
           </Link>
         </div>
 
