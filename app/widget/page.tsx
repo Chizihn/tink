@@ -1,6 +1,5 @@
 "use client";
-
-import * as React from "react";
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Sparkles,
@@ -67,10 +66,6 @@ const features = [
 ];
 
 export default function WidgetPage() {
-  // Ensure page starts at top on load
-  React.useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-linear-to-b from-black via-[#1a0a0a] to-black">
@@ -78,7 +73,7 @@ export default function WidgetPage() {
 
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="relative overflow-hidden border-b border-white/5 px-4 py-20 md:py-32">
+        <section className="relative overflow-hidden border-b border-white/5 px-4 py-20 md:py-16">
           {/* Background gradient effect */}
           <div className="absolute inset-0 bg-linear-to-r from-[#E84142]/10 via-transparent to-[#E84142]/10" />
           <div className="absolute left-1/2 top-0 h-[500px] w-[500px] -translate-x-1/2 rounded-full bg-[#E84142]/5 blur-[100px]" />
@@ -97,7 +92,7 @@ export default function WidgetPage() {
                 </span>
               </div>
 
-              <h1 className="mb-6 bg-linear-to-r from-white via-white to-white/60 bg-clip-text text-5xl font-bold tracking-tight text-transparent md:text-7xl">
+              <h1 className="mb-6 text-5xl font-bold tracking-tight text-white md:text-7xl">
                 Tink Protocol Widget
               </h1>
 
@@ -139,7 +134,7 @@ export default function WidgetPage() {
         </section>
 
         {/* Live Demo Section */}
-        <section id="demo" className="border-b border-white/5 px-4 py-20">
+        <section id="demo" className="border-b border-white/5 px-4 py-12">
           <div className="container mx-auto max-w-6xl">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -224,7 +219,7 @@ export default function WidgetPage() {
         </section>
 
         {/* Integration Section */}
-        <section id="integration" className="px-4 py-20">
+        <section id="integration" className="px-4 py-12">
           <div className="container mx-auto max-w-4xl">
             <motion.div
               initial={{ opacity: 0, y: 20 }}

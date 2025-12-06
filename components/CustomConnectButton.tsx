@@ -45,7 +45,7 @@ export function CustomConnectButton() {
                     onClick={openConnectModal}
                     variant="default"
                     size="lg"
-                    className="font-semibold rounded-full"
+                    className="font-bold"
                   >
                     <Wallet className="mr-2 h-4 w-4" />
                     Connect Wallet

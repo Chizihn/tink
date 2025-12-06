@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { MerchantDashboard } from "@/components/merchant-dashboard";
+
+export const metadata: Metadata = {
+  title: "Merchant Dashboard | Tink Protocol",
+  description: "Manage your tips and view analytics on Tink Protocol",
+};
 
 export default function DashboardPage() {
   return (

@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { TipEntryForm } from "@/components/tip-entry-form";
+
+export const metadata: Metadata = {
+  title: "Tip Now | Tink Protocol",
+  description: "Send AI-powered tips instantly on Avalanche blockchain",
+};
 
 export default function Home() {
   return (

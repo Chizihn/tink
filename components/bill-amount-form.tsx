@@ -20,7 +20,7 @@ export function BillAmountForm({
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   }, []);
 
   return (

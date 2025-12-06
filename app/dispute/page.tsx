@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { DisputeForm } from "@/components/dispute-form";
+
+export const metadata: Metadata = {
+  title: "Dispute Resolution | Tink Protocol",
+  description: "Submit and manage tip disputes on Tink Protocol",
+};
 
 export default function DisputePage() {
   return (

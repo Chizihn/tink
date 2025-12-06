@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { PaymentFlow } from "@/components/payment-flow";
+
+export const metadata: Metadata = {
+  title: "Complete Payment | Tink Protocol",
+  description: "Complete your tip payment securely on Avalanche",
+};
 
 export default function PayPage() {
   return (

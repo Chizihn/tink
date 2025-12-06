@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { ReceiptView } from "@/components/receipt-view";
+
+export const metadata: Metadata = {
+  title: "Payment Receipt | Tink Protocol",
+  description: "View your tip payment receipt and transaction details",
+};
 
 export default function ReceiptPage() {
   return (
