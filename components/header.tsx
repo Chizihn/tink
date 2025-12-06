@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { ShieldCheck } from "lucide-react";
-import { useAccount } from "wagmi";
 import { cn } from "@/lib/utils";
+import { CustomConnectButton } from "./CustomConnectButton";
 
 export function Header() {
-  const { isConnected } = useAccount();
   const pathname = usePathname();
 
   const navLinks = [
+    { href: "/widget", label: "Widget" },
+    { href: "/docs", label: "Docs" },
     { href: "/merchant/demo-cafe/dashboard", label: "Dashboard" },
     { href: "/dispute", label: "Disputes" },
   ];
@@ -30,33 +30,25 @@ export function Header() {
           </Link>
         </div>
 
-        {isConnected && (
-          <nav className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-6 md:flex">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  "text-sm font-medium transition-colors hover:text-white",
-                  pathname?.startsWith(link.href)
-                    ? "text-white"
-                    : "text-muted-foreground"
-                )}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-        )}
+        <nav className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-6 md:flex">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={cn(
+                "text-sm font-medium transition-colors hover:text-white",
+                pathname?.startsWith(link.href)
+                  ? "text-white"
+                  : "text-muted-foreground"
+              )}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
 
         <div className="flex items-center justify-end gap-4">
-          <ConnectButton
-            showBalance={false}
-            accountStatus={{
-              smallScreen: "avatar",
-              largeScreen: "full",
-            }}
-          />
+          <CustomConnectButton />
         </div>
       </div>
     </header>
