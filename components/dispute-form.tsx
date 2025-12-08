@@ -29,7 +29,12 @@ export function DisputeForm() {
 
     setIsSubmitting(true)
     try {
-      await submitDispute(session, `${reason}: ${details}`)
+      await submitDispute({ 
+        sessionId: session, 
+        reason, 
+        details, 
+        submittedBy: "customer" // or get from wallet/auth
+      })
       setIsSubmitted(true)
       toast.success("Dispute Submitted", {
         description: "Our team will review your dispute shortly.",
