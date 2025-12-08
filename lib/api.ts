@@ -5,19 +5,19 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 export interface Merchant {
   id: string;
   name: string;
-  logo: string;
+  slug?: string;
+  logo?: string;
   address: string;
+  walletAddress?: string;
 }
 
 export interface MerchantStats {
-  today: number;
-  week: number;
-  allTime: number;
-  totalCount: number;
-  growth: {
-    today: string;
-    week: string;
-  }
+  totalTipsToday: number;
+  totalTipsThisWeek: number;
+  totalTipsAllTime: number;
+  tipCountTotal: number;
+  percentChangeToday: number;
+  percentChangeWeek: number;
 }
 
 export interface TipEvent {
@@ -44,10 +44,75 @@ export interface Session {
   billAmount: number;
   tipAmount: number;
   totalAmount: number;
-  status: "active" | "completed" | "cancelled";
+  status: "pending" | "tip_selected" | "payment_pending" | "payment_processing" | "confirmed" | "failed" | "expired";
   currency: string;
+  memo: string;
 }
 
+// Receipt response from backend
+export interface ReceiptData {
+  session: {
+    id: string;
+    memo: string;
+    billAmount: number;
+    tipAmount: number;
+    totalAmount: number;
+    currency: string;
+    status: string;
+    createdAt: string;
+  };
+  merchant: {
+    id: string;
+    name: string;
+    slug: string;
+    walletAddress: string;
+  };
+  transaction: {
+    id: string;
+    txHash: string;
+    networkId: string;
+    status: string;
+    confirmedAt: string | null;
+    explorerUrl: string;
+  } | null;
+  network: {
+    name: string;
+    chainId: number;
+    currency: string;
+  };
+  payer: {
+    address: string | null;
+  };
+}
+
+export interface PaymentRequirements {
+  x402Version: number;
+  scheme: string;
+  network: string;
+  maxAmountRequired: string;
+  resource: string;
+  description: string;
+  mimeType: string;
+  payTo: string;
+  maxTimeoutSeconds: number;
+  asset: string;
+  extra?: Record<string, unknown>;
+}
+
+export interface PreparePaymentResponse {
+  session: Session;
+  merchant: Merchant;
+  paymentRequirements: PaymentRequirements;
+}
+
+export interface SettlePaymentResponse {
+  success: boolean;
+  txHash?: string;
+  networkId?: string;
+  error?: string;
+}
+
+// Legacy types for backward compatibility
 export interface PaymentDetails {
   amount: number;
   currency: string;
@@ -82,6 +147,13 @@ export interface WidgetConfig {
 
 // --- API CLIENT ---
 
+interface ApiWrapper<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
 async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   const res = await fetch(url, {
@@ -99,10 +171,19 @@ async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // Handle Blob response for downloads (rudimentary check, mostly we expect JSON)
   const contentType = res.headers.get("content-type");
   if (contentType && contentType.includes("application/json")) {
-    return res.json();
+    const json = await res.json();
+    // Unwrap { success, data } wrapper from backend
+    if (json && typeof json === 'object' && 'success' in json) {
+      if (!json.success) {
+        throw new Error(json.error || json.message || 'API call failed');
+      }
+      return json.data as T;
+    }
+    return json;
   }
   return res.text() as unknown as T; // Fallback or for non-json
 }
+
 
 // === MERCHANTS ===
 
@@ -202,10 +283,10 @@ export async function getAiSuggestion(billAmount: number): Promise<{ suggestion:
 }
 
 // POST /api/tips/split - Split calculation
-export async function calculateSplit(amount: number, config: SplitConfig): Promise<{ split: { FOH: number; BOH: number; Bar: number } }> {
-  return apiCall<{ split: { FOH: number; BOH: number; Bar: number } }>("/api/tips/split", {
+export async function calculateSplit(merchantId: string, tipAmount: number): Promise<{ tipAmount: number; splits: Array<{ name: string; percentage: number; amount: number }>; total: number }> {
+  return apiCall<{ tipAmount: number; splits: Array<{ name: string; percentage: number; amount: number }>; total: number }>("/api/tips/split", {
     method: "POST",
-    body: JSON.stringify({ amount, config }),
+    body: JSON.stringify({ merchantId, tipAmount }),
   });
 }
 
@@ -218,26 +299,26 @@ export async function getTipPercentages(): Promise<number[]> {
 // === PAYMENTS ===
 
 // POST /api/payments/prepare - Prepare x402 payment
-export async function preparePayment(session: string, merchantId?: string): Promise<ResourceResponse> {
-  return apiCall<ResourceResponse>("/api/payments/prepare", {
+export async function preparePayment(sessionId: string, merchantId?: string): Promise<PreparePaymentResponse> {
+  return apiCall<PreparePaymentResponse>("/api/payments/prepare", {
     method: "POST",
-    body: JSON.stringify({ session, merchantId }),
+    body: JSON.stringify({ sessionId, merchantId }),
   });
 }
 
 // POST /api/payments/verify - Verify signature
-export async function verifyPayment(session: string, txHash: string): Promise<VerifyResponse> {
+export async function verifyPayment(sessionId: string, paymentPayload: string): Promise<VerifyResponse> {
   return apiCall<VerifyResponse>("/api/payments/verify", {
     method: "POST",
-    body: JSON.stringify({ session, tx_hash: txHash }),
+    body: JSON.stringify({ sessionId, paymentPayload }),
   });
 }
 
 // POST /api/payments/settle - Settle on-chain
-export async function settlePayment(session: string, signature: string, authorization: any): Promise<VerifyResponse> {
+export async function settlePayment(sessionId: string, paymentPayload: string, payerAddress: string): Promise<VerifyResponse> {
   return apiCall<VerifyResponse>("/api/payments/settle", {
     method: "POST",
-    body: JSON.stringify({ session, signature, authorization }),
+    body: JSON.stringify({ sessionId, paymentPayload, payerAddress }),
   });
 }
 
@@ -247,10 +328,10 @@ export async function getPaymentStatus(sessionId: string): Promise<{ status: str
 }
 
 // POST /api/payments/url - Generate payment URL
-export async function generatePaymentUrl(amount: number, currency: string, merchantId: string): Promise<{ url: string }> {
-  return apiCall<{ url: string }>("/api/payments/url", {
+export async function generatePaymentUrl(sessionId: string): Promise<{ paymentUrl: string }> {
+  return apiCall<{ paymentUrl: string }>("/api/payments/url", {
     method: "POST",
-    body: JSON.stringify({ amount, currency, merchantId }),
+    body: JSON.stringify({ sessionId }),
   });
 }
 
@@ -268,8 +349,8 @@ export async function getChainConfig(): Promise<any> {
 // === RECEIPTS ===
 
 // GET /api/receipts/:sessionId - Get receipt details
-export async function getReceipt(sessionId: string): Promise<TipEvent> {
-  return apiCall<TipEvent>(`/api/receipts/${sessionId}`);
+export async function getReceipt(sessionId: string): Promise<ReceiptData> {
+  return apiCall<ReceiptData>(`/api/receipts/${sessionId}`);
 }
 
 // GET /api/receipts/:sessionId/share - Get shareable URL
@@ -290,10 +371,10 @@ export async function downloadReceipt(sessionId: string): Promise<Blob> {
 // === DISPUTES ===
 
 // POST /api/disputes - Submit dispute
-export async function submitDispute(session: string, reason: string): Promise<{ status: string; message: string }> {
-  return apiCall<{ status: string; message: string }>("/api/disputes", {
+export async function submitDispute(data: { sessionId: string; reason: string; details: string; submittedBy: string }): Promise<any> {
+  return apiCall<any>("/api/disputes", {
     method: "POST",
-    body: JSON.stringify({ session, reason }),
+    body: JSON.stringify(data),
   });
 }
 
@@ -362,7 +443,7 @@ export async function getEmbedMerchant(slug: string): Promise<Merchant> {
 // Helper aliases to maintain specific confusing naming from previous steps if needed, 
 // but sticking to strict naming is better. 
 // getResource is effectively preparePayment + get info.
-export async function getResource(session: string, merchantId?: string): Promise<ResourceResponse> {
+export async function getResource(session: string, merchantId?: string): Promise<PreparePaymentResponse> {
   return preparePayment(session, merchantId);
 }
 

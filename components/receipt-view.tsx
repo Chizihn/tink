@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import confetti from "canvas-confetti"
-import { getReceipt, downloadReceipt, type TipEvent } from "@/lib/api"
+import { getReceipt, downloadReceipt, type ReceiptData } from "@/lib/api"
 
 export function ReceiptView() {
   const searchParams = useSearchParams()
@@ -20,7 +20,7 @@ export function ReceiptView() {
   const session = searchParams.get("session") || ""
   const merchantId = searchParams.get("merchant");
   
-  const [tipData, setTipData] = React.useState<TipEvent | null>(null)
+  const [receiptData, setReceiptData] = React.useState<ReceiptData | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
 
   React.useEffect(() => {
@@ -32,16 +32,16 @@ export function ReceiptView() {
       colors: ['#E84142', '#ffffff', '#000000']
     })
 
-    async function fetchTipData() {
+    async function fetchReceiptData() {
       if (session) {
         try {
-          // Fetch specific receipt using the session ID
-          const tip = await getReceipt(session)
-          if (tip) {
-            setTipData(tip)
+          // Fetch receipt using the session ID
+          const data = await getReceipt(session)
+          if (data) {
+            setReceiptData(data)
           }
         } catch (error) {
-          console.error("Failed to fetch tip data", error)
+          console.error("Failed to fetch receipt data", error)
           toast.error("Could not load receipt details")
         } finally {
           setIsLoading(false)
@@ -50,7 +50,7 @@ export function ReceiptView() {
         setIsLoading(false)
       }
     }
-    fetchTipData()
+    fetchReceiptData()
   }, [session])
 
   const handleDownload = async () => {
@@ -90,11 +90,12 @@ export function ReceiptView() {
     }
   }
 
-  // Use data from API if available, otherwise fallback to params (which might be unverified)
-  const displayTotal = totalAmount
-  const displayTip = tipData ? tipData.amount : tipAmount
-  const displayTx = tipData ? tipData.tx_hash : txHash
-  const displaySplit = tipData ? tipData.split : { FOH: 60, BOH: 30, Bar: 10 } // Fallback or default
+  // Use data from API if available, otherwise fallback to params
+  const displayTotal = receiptData?.session?.totalAmount?.toFixed(2) || totalAmount
+  const displayTip = receiptData?.session?.tipAmount?.toFixed(2) || tipAmount
+  const displayTx = receiptData?.transaction?.txHash || txHash
+  const explorerUrl = receiptData?.transaction?.explorerUrl || `https://testnet.snowtrace.io/tx/${displayTx}`
+  const displaySplit = { FOH: 60, BOH: 30, Bar: 10 } // Default split for demo
 
   return (
     <div className="mx-auto w-full max-w-md space-y-8 p-4">
@@ -122,7 +123,7 @@ export function ReceiptView() {
             <div className="flex justify-between items-center">
               <span className="text-muted-foreground">Transaction Hash</span>
               <a 
-                href={`https://testnet.snowtrace.io/tx/${displayTx}`} 
+                href={explorerUrl} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-[#E84142] hover:underline"

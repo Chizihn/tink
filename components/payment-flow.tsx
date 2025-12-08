@@ -46,16 +46,13 @@ export function PaymentFlow() {
     setIsProcessing(true);
     try {
       // 1. Prepare Payment (Get info from backend)
-      // This maps to "Prepare x402 payment"
       const resource = await preparePayment(session);
-      const { payment } = resource;
+      const { paymentRequirements, merchant } = resource;
+
+      // Parse amount from paymentRequirements.maxAmountRequired (string in smallest unit)
+      const amountInSmallestUnit = BigInt(paymentRequirements.maxAmountRequired);
 
       // 2. Construct Authorization (EIP-3009)
-      // We need validAfter/validBefore/nonce. 
-      // If the backend doesn't provide them, we generate them.
-      // Ideally backend provides a nonce to prevent replay.
-      // Let's assume we casually generate nonce if not in payment object.
-      
       const nonce = "0x" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map(b => b.toString(16).padStart(2, '0')).join('');
         
@@ -63,10 +60,10 @@ export function PaymentFlow() {
       const validBefore = validAfter + 3600; // 1 hour
 
       const domain = {
-        name: "USD Coin", // Or what the accepted token is
+        name: "USD Coin",
         version: "2",
         chainId: 43113, // Avalanche Fuji
-        verifyingContract: payment.token_mint as `0x${string}`,
+        verifyingContract: paymentRequirements.asset as `0x${string}`,
       } as const;
 
        const types = {
@@ -80,12 +77,10 @@ export function PaymentFlow() {
           ],
         } as const;
 
-        const value = BigInt(Math.floor(payment.amount * 1000000)); // USDC 6 decimals
-
         const authorization = {
             from: userAddress,
-            to: payment.pay_to as `0x${string}`,
-            value: value,
+            to: paymentRequirements.payTo as `0x${string}`,
+            value: amountInSmallestUnit,
             validAfter: BigInt(validAfter),
             validBefore: BigInt(validBefore),
             nonce: nonce as `0x${string}`,
@@ -106,12 +101,7 @@ export function PaymentFlow() {
 
         // 4. Settle on-chain via Backend
         console.log("Settling payment...");
-        const result = await settlePayment(session, normalizedSig, {
-            ...authorization,
-            value: authorization.value.toString(),
-            validAfter: authorization.validAfter.toString(),
-            validBefore: authorization.validBefore.toString()
-        });
+        const result = await settlePayment(session, normalizedSig, userAddress);
         
         if (result.status === "confirmed") {
              confetti({
