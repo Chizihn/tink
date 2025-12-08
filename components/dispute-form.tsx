@@ -67,6 +67,14 @@ export function DisputeForm() {
     )
   }
 
+  const [reasons, setReasons] = React.useState<{id: string, label: string}[]>([])
+  
+  React.useEffect(() => {
+    import("@/lib/api").then(({ getDisputeReasons }) => {
+      getDisputeReasons().then(setReasons).catch(console.error)
+    })
+  }, [])
+
   return (
     <div className="mx-auto w-full max-w-md space-y-6 p-4">
       <div className="text-center">
@@ -88,9 +96,17 @@ export function DisputeForm() {
                   <SelectValue placeholder="Select a reason" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="incorrect_split">Incorrect Split</SelectItem>
-                  <SelectItem value="never_received">Never Received</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
+                  {reasons.length > 0 ? (
+                    reasons.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>{r.label}</SelectItem>
+                    ))
+                  ) : (
+                    <>
+                      <SelectItem value="incorrect_split">Incorrect Split</SelectItem>
+                      <SelectItem value="never_received">Never Received</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>

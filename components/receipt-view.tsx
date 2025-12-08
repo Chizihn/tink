@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import confetti from "canvas-confetti"
-import { getMerchantTips, type TipEvent } from "@/lib/api"
+import { getReceipt, downloadReceipt, type TipEvent } from "@/lib/api"
 
 export function ReceiptView() {
   const searchParams = useSearchParams()
@@ -18,7 +18,7 @@ export function ReceiptView() {
   const tipAmount = searchParams.get("tip") || "0.00"
   const txHash = searchParams.get("tx") || ""
   const session = searchParams.get("session") || ""
-  const merchantId = "demo-cafe" // In a real app, this should probably be passed or inferred
+  const merchantId = searchParams.get("merchant");
   
   const [tipData, setTipData] = React.useState<TipEvent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -35,16 +35,14 @@ export function ReceiptView() {
     async function fetchTipData() {
       if (session) {
         try {
-          // Since we don't have a direct getTip(session) endpoint in api.txt,
-          // we fetch merchant tips and find the one with the matching session.
-          // This is inefficient but follows the provided API spec.
-          const tips = await getMerchantTips(merchantId)
-          const foundTip = tips.find(t => t.session === session)
-          if (foundTip) {
-            setTipData(foundTip)
+          // Fetch specific receipt using the session ID
+          const tip = await getReceipt(session)
+          if (tip) {
+            setTipData(tip)
           }
         } catch (error) {
           console.error("Failed to fetch tip data", error)
+          toast.error("Could not load receipt details")
         } finally {
           setIsLoading(false)
         }
@@ -53,13 +51,28 @@ export function ReceiptView() {
       }
     }
     fetchTipData()
-  }, [session, merchantId])
+  }, [session])
 
-  const handleDownload = () => {
-    window.print()
-    toast.info("Downloading Receipt...", {
-      description: "Your receipt is being generated.",
-    })
+  const handleDownload = async () => {
+    try {
+      if (session) {
+        const blob = await downloadReceipt(session);
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `receipt-${session}.pdf`); // Assuming PDF
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        toast.success("Receipt Downloaded");
+      } else {
+         window.print(); // Fallback
+      }
+    } catch (e) {
+      console.error(e);
+      window.print(); // Fallback 
+      toast.info("Printing via browser...");
+    }
   }
 
   const handleShare = () => {

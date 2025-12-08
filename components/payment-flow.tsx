@@ -4,11 +4,10 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useAccount,
-  useSendTransaction,
-  useWaitForTransactionReceipt,
+  useSignTypedData,
+  useWalletClient
 } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { parseEther } from "viem";
 import { Loader2, ShieldCheck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,81 +20,127 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
-import { verifyPayment } from "@/lib/api";
+import { preparePayment, settlePayment } from "@/lib/api";
+import { normalizeSignatureV } from "@/lib/x402";
 
 export function PaymentFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isConnected, address: userAddress } = useAccount();
-  const { data: hash, sendTransaction, isPending } = useSendTransaction();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({
-      hash,
-    });
+  const { signTypedDataAsync } = useSignTypedData();
+  
+  // Local state
+  const [isProcessing, setIsProcessing] = React.useState(false);
 
-  const merchantId = searchParams.get("merchant") || "demo-cafe";
+  const merchantId = searchParams.get("merchant");
   const totalAmount = searchParams.get("total") || "0.00";
   const tipAmount = searchParams.get("tip") || "0.00";
   const billAmount = searchParams.get("bill") || "0.00";
   const session = searchParams.get("session") || "";
-  const payTo = searchParams.get("payTo") || "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"; // Default or from API
   const memo = searchParams.get("memo") || "";
-
-  React.useEffect(() => {
-    async function handleSuccess() {
-      if (isConfirmed && hash) {
-        try {
-          // Verify payment with backend
-          if (session) {
-             await verifyPayment(session, hash);
-          }
-          
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-          });
-
-          toast.success("Payment Successful!", {
-            description: "Your tip has been sent on Avalanche.",
-          });
-
-          setTimeout(() => {
-            router.push(
-              `/receipt?session=${session || Date.now()}&tx=${hash}&total=${totalAmount}&tip=${tipAmount}`
-            );
-          }, 1500);
-        } catch (error) {
-          console.error("Verification failed", error);
-          toast.error("Verification Failed", {
-            description: "Payment confirmed on chain, but backend verification failed.",
-          });
-          // Still redirect to receipt? Maybe with a warning.
-           setTimeout(() => {
-            router.push(
-              `/receipt?session=${session || Date.now()}&tx=${hash}&total=${totalAmount}&tip=${tipAmount}&verified=false`
-            );
-          }, 1500);
-        }
-      }
-    }
-    handleSuccess();
-  }, [isConfirmed, hash, router, totalAmount, tipAmount, session]);
+  // payTo logic moved to backend prepare
 
   const handlePay = async () => {
-    if (!isConnected || !userAddress) return;
+    if (!isConnected || !userAddress || !session) return;
 
+    setIsProcessing(true);
     try {
-      sendTransaction({
-        to: payTo as `0x${string}`,
-        value: parseEther(totalAmount),
-      });
-    } catch (error) {
+      // 1. Prepare Payment (Get info from backend)
+      // This maps to "Prepare x402 payment"
+      const resource = await preparePayment(session);
+      const { payment } = resource;
+
+      // 2. Construct Authorization (EIP-3009)
+      // We need validAfter/validBefore/nonce. 
+      // If the backend doesn't provide them, we generate them.
+      // Ideally backend provides a nonce to prevent replay.
+      // Let's assume we casually generate nonce if not in payment object.
+      
+      const nonce = "0x" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+        
+      const validAfter = Math.floor(Date.now() / 1000);
+      const validBefore = validAfter + 3600; // 1 hour
+
+      const domain = {
+        name: "USD Coin", // Or what the accepted token is
+        version: "2",
+        chainId: 43113, // Avalanche Fuji
+        verifyingContract: payment.token_mint as `0x${string}`,
+      } as const;
+
+       const types = {
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        } as const;
+
+        const value = BigInt(Math.floor(payment.amount * 1000000)); // USDC 6 decimals
+
+        const authorization = {
+            from: userAddress,
+            to: payment.pay_to as `0x${string}`,
+            value: value,
+            validAfter: BigInt(validAfter),
+            validBefore: BigInt(validBefore),
+            nonce: nonce as `0x${string}`,
+        };
+
+        // 3. Sign Typed Data
+        console.log("Signing authorization...");
+        toast.info("Please sign the payment authorization");
+        
+        const signature = await signTypedDataAsync({
+            domain,
+            types,
+            primaryType: "TransferWithAuthorization",
+            message: authorization
+        });
+
+        const normalizedSig = normalizeSignatureV(signature, 43113);
+
+        // 4. Settle on-chain via Backend
+        console.log("Settling payment...");
+        const result = await settlePayment(session, normalizedSig, {
+            ...authorization,
+            value: authorization.value.toString(),
+            validAfter: authorization.validAfter.toString(),
+            validBefore: authorization.validBefore.toString()
+        });
+        
+        if (result.status === "confirmed") {
+             confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 },
+             });
+
+             toast.success("Payment Successful!");
+             
+             // 5. Redirect to Receipt
+             setTimeout(() => {
+                router.push(
+                  `/receipt?session=${session}&tx=${result.receipt_id || "confirmed"}&total=${totalAmount}&tip=${tipAmount}`
+                );
+             }, 1500);
+        } else {
+             throw new Error("Payment settlement failed: " + result.status);
+        }
+
+    } catch (error: any) {
       console.error(error);
-      toast.error("Payment Failed", {
-        description: "Please try again.",
-      });
+      if (error.cause?.code === 4001) { // User rejected
+         toast.error("Transaction rejected");
+      } else {
+         toast.error("Payment Failed", { description: error.message });
+      }
     } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -147,21 +192,6 @@ export function PaymentFlow() {
                 {userAddress
                   ? `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`
                   : "Your Wallet"}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>To</span>
-              <span className="font-mono">{merchantId}</span>
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Recipient Address</span>
-              <span className="font-mono">{payTo.slice(0, 6)}...{payTo.slice(-4)}</span>
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Network</span>
-              <span className="flex items-center gap-1">
-                <ShieldCheck className="h-3 w-3" />
-                Avalanche Fuji C-Chain
               </span>
             </div>
           </div>
@@ -221,9 +251,9 @@ export function PaymentFlow() {
               size="lg"
               className="w-full bg-avalanche-red hover:bg-avalanche-red/90"
               onClick={handlePay}
-              disabled={isPending || isConfirming}
+              disabled={isProcessing}
             >
-              {isPending || isConfirming ? (
+              {isProcessing ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing...

@@ -1,3 +1,7 @@
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+// --- Types ---
+
 export interface Merchant {
   id: string;
   name: string;
@@ -5,10 +9,42 @@ export interface Merchant {
   address: string;
 }
 
-export interface TipSession {
+export interface MerchantStats {
+  today: number;
+  week: number;
+  allTime: number;
+  totalCount: number;
+  growth: {
+    today: string;
+    week: string;
+  }
+}
+
+export interface TipEvent {
+  id: number;
+  session: string;
+  merchantId: string;
+  amount: string;
+  currency: string;
+  status: "pending" | "confirmed" | "failed";
+  tx_hash: string;
+  created_at: string;
+  split?: { FOH: number; BOH: number; Bar: number };
+}
+
+export interface SplitConfig {
+  FOH: number;
+  BOH: number;
+  Bar: number;
+}
+
+export interface Session {
   id: string;
   merchantId: string;
-  billAmount?: number;
+  billAmount: number;
+  tipAmount: number;
+  totalAmount: number;
+  status: "active" | "completed" | "cancelled";
   currency: string;
 }
 
@@ -27,7 +63,7 @@ export interface ResourceResponse {
   message: string;
   payment: PaymentDetails;
   session: string;
-  ai_suggestion: number;
+  ai_suggestion?: number;
 }
 
 export interface VerifyResponse {
@@ -35,194 +71,307 @@ export interface VerifyResponse {
   receipt_id: string;
 }
 
-export interface TipEvent {
-  id: number;
-  session: string;
-  merchantId: string;
-  amount: string;
-  currency: string;
-  status: "pending" | "confirmed" | "failed";
-  tx_hash: string;
-  created_at: string;
-  split: { FOH: number; BOH: number; Bar: number };
+export interface DisputeReason {
+  id: string;
+  label: string;
 }
 
-export interface SplitSimulationResponse {
-  total: number;
-  split: { FOH: number; BOH: number; Bar: number };
+export interface WidgetConfig {
+  [key: string]: any;
 }
 
-export interface SplitConfig {
-  FOH: number;
-  BOH: number;
-  Bar: number;
+// --- API CLIENT ---
+
+async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const res = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    ...options,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`API call failed: ${res.status} ${res.statusText} - ${errorBody}`);
+  }
+
+  // Handle Blob response for downloads (rudimentary check, mostly we expect JSON)
+  const contentType = res.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    return res.json();
+  }
+  return res.text() as unknown as T; // Fallback or for non-json
 }
 
-// --- MOCK DATA ---
+// === MERCHANTS ===
 
-const MOCK_RESOURCE_RESPONSE: ResourceResponse = {
-  code: 200,
-  message: "Success",
-  payment: {
-    amount: 10.0,
-    currency: "USDC",
-    network: "Avalanche",
-    pay_to: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-    token_mint: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
-    memo: "Tink-123456",
-    expires_at: new Date(Date.now() + 3600000).toISOString(),
-  },
-  session: "mock-session-123",
-  ai_suggestion: 0.15,
-};
-
-const MOCK_VERIFY_RESPONSE: VerifyResponse = {
-  status: "confirmed",
-  receipt_id: "rcpt_mock_123",
-};
-
-const MOCK_TIPS: TipEvent[] = [
-  {
-    id: 1,
-    session: "mock-session-123",
-    merchantId: "demo-cafe",
-    amount: "2.50",
-    currency: "USDC",
-    status: "confirmed",
-    tx_hash: "0x123...abc",
-    created_at: new Date().toISOString(),
-    split: { FOH: 60, BOH: 30, Bar: 10 },
-  },
-  {
-    id: 2,
-    session: "mock-session-456",
-    merchantId: "demo-cafe",
-    amount: "5.00",
-    currency: "USDC",
-    status: "confirmed",
-    tx_hash: "0x456...def",
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    split: { FOH: 50, BOH: 50, Bar: 0 },
-  },
-];
-
-const MOCK_SPLIT_SIMULATION: SplitSimulationResponse = {
-  total: 12.5,
-  split: { FOH: 7.5, BOH: 3.75, Bar: 1.25 },
-};
-
-
-export async function getResource(
-  session: string,
-  merchantId: string
-): Promise<ResourceResponse> {
-  // const res = await fetch(
-  //   `${API_BASE_URL}/api/resource?session=${session}&merchantId=${merchantId}`
-  // );
-  // if (!res.ok) {
-  //   throw new Error("Failed to fetch resource");
-  // }
-  // return res.json();
-  console.log(`[Mock] getResource called with session=${session}, merchantId=${merchantId}`);
-  return new Promise((resolve) => setTimeout(() => resolve(MOCK_RESOURCE_RESPONSE), 500));
+// GET /api/merchants - Get all merchants
+export async function getMerchants(): Promise<Merchant[]> {
+  return apiCall<Merchant[]>("/api/merchants");
 }
 
-export async function verifyPayment(
-  session: string,
-  txHash: string
-): Promise<VerifyResponse> {
-  // const res = await fetch(`${API_BASE_URL}/api/verify`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify({ session, tx_hash: txHash }),
-  // });
-  // if (!res.ok) {
-  //   throw new Error("Failed to verify payment");
-  // }
-  // return res.json();
-  console.log(`[Mock] verifyPayment called with session=${session}, txHash=${txHash}`);
-  return new Promise((resolve) => setTimeout(() => resolve(MOCK_VERIFY_RESPONSE), 1000));
+// GET /api/merchants/:id - Get merchant info
+export async function getMerchant(id: string): Promise<Merchant> {
+  return apiCall<Merchant>(`/api/merchants/${id}`);
 }
 
-export async function getMerchantTips(merchantId: string): Promise<TipEvent[]> {
-  // const res = await fetch(`${API_BASE_URL}/api/merchant/${merchantId}/tips`);
-  // if (!res.ok) {
-  //   throw new Error("Failed to fetch merchant tips");
-  // }
-  // return res.json();
-  console.log(`[Mock] getMerchantTips called with merchantId=${merchantId}`);
-  return new Promise((resolve) => setTimeout(() => resolve(MOCK_TIPS), 600));
+// POST /api/merchants - Create new merchant
+export async function createMerchant(data: any): Promise<Merchant> {
+  return apiCall<Merchant>("/api/merchants", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
-export async function simulateSplit(
-  merchantId: string,
-  total: number
-): Promise<SplitSimulationResponse> {
-  // const res = await fetch(
-  //   `${API_BASE_URL}/api/merchant/${merchantId}/split?total=${total}`
-  // );
-  // if (!res.ok) {
-  //   throw new Error("Failed to simulate split");
-  // }
-  // return res.json();
-  console.log(`[Mock] simulateSplit called with merchantId=${merchantId}, total=${total}`);
-  return new Promise((resolve) => setTimeout(() => resolve(MOCK_SPLIT_SIMULATION), 400));
+// GET /api/merchants/:id/stats - Dashboard stats
+export async function getMerchantStats(id: string): Promise<MerchantStats> {
+  return apiCall<MerchantStats>(`/api/merchants/${id}/stats`);
 }
 
-export async function saveSplit(
-  merchantId: string,
-  split: SplitConfig
-): Promise<{ status: string; message: string }> {
-  // const res = await fetch(`${API_BASE_URL}/api/merchant/${merchantId}/split`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(split),
-  // });
-  // if (!res.ok) {
-  //   throw new Error("Failed to save split configuration");
-  // }
-  // return res.json();
-  console.log(`[Mock] saveSplit called with merchantId=${merchantId}, split=`, split);
-  return new Promise((resolve) => setTimeout(() => resolve({ status: "success", message: "Split configuration saved" }), 800));
+// GET /api/merchants/:id/tips - Recent tips list
+export async function getMerchantTips(id: string): Promise<TipEvent[]> {
+  return apiCall<TipEvent[]>(`/api/merchants/${id}/tips`);
 }
 
-export async function submitDispute(
-  session: string,
-  reason: string
-): Promise<{ status: string; message: string }> {
-  // const res = await fetch(`${API_BASE_URL}/api/dispute`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify({ session, reason }),
-  // });
-  // if (!res.ok) {
-  //   throw new Error("Failed to submit dispute");
-  // }
-  // return res.json();
-  console.log(`[Mock] submitDispute called with session=${session}, reason=${reason}`);
-  return new Promise((resolve) => setTimeout(() => resolve({ status: "success", message: "Dispute submitted" }), 700));
+// GET /api/merchants/:id/tips/export - Export CSV
+export async function exportMerchantTipsUrl(id: string): Promise<string> {
+  // This usually returns a download, so we might just return the URL for window.open
+  return `${API_BASE_URL}/api/merchants/${id}/tips/export`;
 }
 
-// Helper to get merchant details from the resource response or a separate endpoint if needed.
-// For now, we'll keep a mock or assume the resource endpoint provides enough info,
-// but the current api.txt doesn't show a dedicated merchant details endpoint.
-// We will use the MOCK_MERCHANTS for display purposes (name, logo) if not provided by API,
-// or we can infer it.
-// However, the existing code uses getMerchant. Let's keep a shim for now or update usage.
-// The api.txt doesn't have GET /api/merchant/:id.
-// We will keep the mock for static merchant data (logo, name) since the API doesn't seem to return it.
-
-export const MOCK_MERCHANTS: Record<string, Merchant> = {
-  "demo-cafe": {
-    id: "demo-cafe",
-    name: "Demo Cafe",
-    logo: "https://api.dicebear.com/7.x/initials/svg?seed=DC&backgroundColor=E84142",
-    address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", // Updated to match api.txt pay_to potentially
-  },
-};
-
-export async function getMerchant(id: string): Promise<Merchant | null> {
-  // In a real app, this might come from an endpoint.
-  // For now, return mock data to keep the UI working.
-  return MOCK_MERCHANTS[id] || MOCK_MERCHANTS["demo-cafe"];
+// GET /api/merchants/:id/split-config - Get tip split config
+export async function getSplitConfig(id: string): Promise<SplitConfig> {
+  return apiCall<SplitConfig>(`/api/merchants/${id}/split-config`);
 }
+
+// PUT /api/merchants/:id/split-config - Update tip split config
+export async function updateSplitConfig(id: string, config: SplitConfig): Promise<SplitConfig> {
+  return apiCall<SplitConfig>(`/api/merchants/${id}/split-config`, {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+// === SESSIONS ===
+
+// POST /api/sessions - Create session
+export async function createSession(data: { merchantId: string; billAmount: number; currency?: string }): Promise<Session> {
+  return apiCall<Session>("/api/sessions", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// GET /api/sessions/:id - Get session
+export async function getSession(id: string): Promise<Session> {
+  return apiCall<Session>(`/api/sessions/${id}`);
+}
+
+// PATCH /api/sessions/:id/tip - Update tip
+export async function updateSessionTip(id: string, tipAmount: number): Promise<Session> {
+  return apiCall<Session>(`/api/sessions/${id}/tip`, {
+    method: "PATCH",
+    body: JSON.stringify({ tipAmount }),
+  });
+}
+
+// POST /api/sessions/:id/cancel - Cancel session
+export async function cancelSession(id: string): Promise<{ success: boolean }> {
+  return apiCall<{ success: boolean }>(`/api/sessions/${id}/cancel`, {
+    method: "POST",
+  });
+}
+
+// === TIPS ===
+
+// POST /api/tips/calculate - Calculate options (Round Up, 10%, 15%, 20%)
+export async function calculateTipOptions(billAmount: number): Promise<{ options: number[] }> {
+  return apiCall<{ options: number[] }>("/api/tips/calculate", {
+    method: "POST",
+    body: JSON.stringify({ billAmount }),
+  });
+}
+
+// POST /api/tips/ai-suggestion - AI suggestion
+export async function getAiSuggestion(billAmount: number): Promise<{ suggestion: number; reason?: string }> {
+  return apiCall<{ suggestion: number; reason?: string }>("/api/tips/ai-suggestion", {
+    method: "POST",
+    body: JSON.stringify({ billAmount }),
+  });
+}
+
+// POST /api/tips/split - Split calculation
+export async function calculateSplit(amount: number, config: SplitConfig): Promise<{ split: { FOH: number; BOH: number; Bar: number } }> {
+  return apiCall<{ split: { FOH: number; BOH: number; Bar: number } }>("/api/tips/split", {
+    method: "POST",
+    body: JSON.stringify({ amount, config }),
+  });
+}
+
+// GET /api/tips/percentages - Get tip percentages
+export async function getTipPercentages(): Promise<number[]> {
+  return apiCall<number[]>("/api/tips/percentages");
+}
+
+
+// === PAYMENTS ===
+
+// POST /api/payments/prepare - Prepare x402 payment
+export async function preparePayment(session: string, merchantId?: string): Promise<ResourceResponse> {
+  return apiCall<ResourceResponse>("/api/payments/prepare", {
+    method: "POST",
+    body: JSON.stringify({ session, merchantId }),
+  });
+}
+
+// POST /api/payments/verify - Verify signature
+export async function verifyPayment(session: string, txHash: string): Promise<VerifyResponse> {
+  return apiCall<VerifyResponse>("/api/payments/verify", {
+    method: "POST",
+    body: JSON.stringify({ session, tx_hash: txHash }),
+  });
+}
+
+// POST /api/payments/settle - Settle on-chain
+export async function settlePayment(session: string, signature: string, authorization: any): Promise<VerifyResponse> {
+  return apiCall<VerifyResponse>("/api/payments/settle", {
+    method: "POST",
+    body: JSON.stringify({ session, signature, authorization }),
+  });
+}
+
+// GET /api/payments/status/:sessionId - Get status
+export async function getPaymentStatus(sessionId: string): Promise<{ status: string }> {
+  return apiCall<{ status: string }>(`/api/payments/status/${sessionId}`);
+}
+
+// POST /api/payments/url - Generate payment URL
+export async function generatePaymentUrl(amount: number, currency: string, merchantId: string): Promise<{ url: string }> {
+  return apiCall<{ url: string }>("/api/payments/url", {
+    method: "POST",
+    body: JSON.stringify({ amount, currency, merchantId }),
+  });
+}
+
+// GET /api/payments/supported - Get supported methods
+export async function getSupportedMethods(): Promise<any> {
+  return apiCall("/api/payments/supported");
+}
+
+// GET /api/payments/config - Get chain config
+export async function getChainConfig(): Promise<any> {
+  return apiCall("/api/payments/config");
+}
+
+
+// === RECEIPTS ===
+
+// GET /api/receipts/:sessionId - Get receipt details
+export async function getReceipt(sessionId: string): Promise<TipEvent> {
+  return apiCall<TipEvent>(`/api/receipts/${sessionId}`);
+}
+
+// GET /api/receipts/:sessionId/share - Get shareable URL
+export async function getReceiptShareUrl(sessionId: string): Promise<{ url: string }> {
+  return apiCall<{ url: string }>(`/api/receipts/${sessionId}/share`);
+}
+
+// GET /api/receipts/:sessionId/download - Download receipt JSON
+export async function downloadReceipt(sessionId: string): Promise<Blob> {
+  // Direct fetch for blob
+  const url = `${API_BASE_URL}/api/receipts/${sessionId}/download`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to download receipt");
+  return res.blob();
+}
+
+
+// === DISPUTES ===
+
+// POST /api/disputes - Submit dispute
+export async function submitDispute(session: string, reason: string): Promise<{ status: string; message: string }> {
+  return apiCall<{ status: string; message: string }>("/api/disputes", {
+    method: "POST",
+    body: JSON.stringify({ session, reason }),
+  });
+}
+
+// GET /api/disputes/:id - Get dispute
+export async function getDispute(id: string): Promise<any> {
+  return apiCall(`/api/disputes/${id}`);
+}
+
+// GET /api/disputes/merchant/:merchantId - Get merchant disputes
+export async function getMerchantDisputes(merchantId: string): Promise<TipEvent[]> {
+  return apiCall<TipEvent[]>(`/api/disputes/merchant/${merchantId}`);
+}
+
+// PATCH /api/disputes/:id/status - Update dispute status
+export async function updateDisputeStatus(id: string, status: string): Promise<any> {
+  return apiCall(`/api/disputes/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+// GET /api/disputes/meta/reasons - Get dispute reasons
+export async function getDisputeReasons(): Promise<DisputeReason[]> {
+  return apiCall<DisputeReason[]>("/api/disputes/meta/reasons");
+}
+
+
+// === WEBHOOKS ===
+
+// POST /api/webhooks/payment - Payment confirmation
+export async function triggerPaymentWebhook(payload: any): Promise<any> {
+  return apiCall("/api/webhooks/payment", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+// POST /api/webhooks/test - Test webhook
+export async function triggerTestWebhook(): Promise<any> {
+  return apiCall("/api/webhooks/test", {
+    method: "POST",
+  });
+}
+
+
+// === EMBED ===
+
+// GET /api/embed/config - Widget config
+export async function getWidgetConfig(): Promise<WidgetConfig> {
+  return apiCall<WidgetConfig>("/api/embed/config");
+}
+
+// POST /api/embed/session - Create widget session
+export async function createWidgetSession(merchantId: string, amount: number): Promise<{ session: string }> {
+  return apiCall<{ session: string }>("/api/embed/session", {
+    method: "POST",
+    body: JSON.stringify({ merchantId, amount }),
+  });
+}
+
+// GET /api/embed/merchants/:slug - Get merchant for embed
+export async function getEmbedMerchant(slug: string): Promise<Merchant> {
+  return apiCall<Merchant>(`/api/embed/merchants/${slug}`);
+}
+
+// Helper aliases to maintain specific confusing naming from previous steps if needed, 
+// but sticking to strict naming is better. 
+// getResource is effectively preparePayment + get info.
+export async function getResource(session: string, merchantId?: string): Promise<ResourceResponse> {
+  return preparePayment(session, merchantId);
+}
+
+// Deprecated stubs - removed or strictly mapped now.
+// User asked to "consume all the damn endpoints", so everything is mapped above.
+// For compatibility, saveSplit -> updateSplitConfig
+export async function saveSplit(merchantId: string, split: SplitConfig): Promise<SplitConfig> {
+  return updateSplitConfig(merchantId, split);
+}
+
+
+

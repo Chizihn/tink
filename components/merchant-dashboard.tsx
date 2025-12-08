@@ -26,59 +26,76 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { getMerchantTips, saveSplit, type TipEvent } from "@/lib/api";
+import { 
+  getMerchant,
+  getMerchantTips, 
+  getMerchantStats, 
+  updateSplitConfig, 
+  getSplitConfig,
+  exportMerchantTipsUrl,
+  type TipEvent,
+  type MerchantStats,
+  type Merchant
+} from "@/lib/api";
 
 export function MerchantDashboard() {
   const params = useParams();
   const merchantId = params.merchantId as string;
+  const [merchant, setMerchant] = React.useState<Merchant | null>(null);
   const [tips, setTips] = React.useState<TipEvent[]>([]);
+  const [stats, setStats] = React.useState<MerchantStats | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [split, setSplit] = React.useState({ foh: 60, boh: 30, bar: 10 });
 
   React.useEffect(() => {
-    async function loadTips() {
+    async function loadData() {
       try {
-        const data = await getMerchantTips(merchantId);
-        setTips(data);
+        const [merchantData, tipsData, statsData, configData] = await Promise.all([
+          getMerchant(merchantId),
+          getMerchantTips(merchantId),
+          getMerchantStats(merchantId),
+          getSplitConfig(merchantId).catch(() => ({ FOH: 60, BOH: 30, Bar: 10 })) // Fallback if 404
+        ]);
+        
+        setMerchant(merchantData);
+        setTips(tipsData);
+        setStats(statsData);
+        setSplit({ foh: configData.FOH, boh: configData.BOH, bar: configData.Bar });
       } catch (error) {
-        console.error("Failed to load tips", error);
-        toast.error("Failed to load tips");
+        console.error("Failed to load dashboard data", error);
+        toast.error("Failed to load dashboard data");
       } finally {
         setIsLoading(false);
       }
     }
-    loadTips();
+    loadData();
   }, [merchantId]);
 
-  const totalConfirmed = tips
-    .filter((t) => t.status === "confirmed")
-    .reduce((acc, tip) => acc + parseFloat(tip.amount), 0);
-
-  const stats = [
+  const statsCards = [
     {
       title: "Total Tips Today",
-      value: `$${totalConfirmed.toFixed(2)}`,
-      change: "+12.3%",
+      value: stats ? `$${stats.today.toFixed(2)}` : "$0.00",
+      change: stats?.growth.today || "+0%",
       icon: DollarSign,
       color: "text-green-400",
     },
     {
       title: "This Week",
-      value: "$2,847.32",
-      change: "+18.7%",
+      value: stats ? `$${stats.week.toFixed(2)}` : "$0.00",
+      change: stats?.growth.week || "+0%",
       icon: TrendingUp,
       color: "text-blue-400",
     },
     {
       title: "All Time Earnings",
-      value: "$18,492.10",
+      value: stats ? `$${stats.allTime.toFixed(2)}` : "$0.00",
       change: null,
       icon: CreditCard,
       color: "text-purple-400",
     },
     {
       title: "Total Tips Received",
-      value: tips.length.toString(),
+      value: stats ? stats.totalCount.toString() : "0",
       change: null,
       icon: Users,
       color: "text-orange-400",
@@ -107,7 +124,7 @@ export function MerchantDashboard() {
 
   const handleUpdateSplit = async () => {
     try {
-      await saveSplit(merchantId, {
+      await updateSplitConfig(merchantId, {
         FOH: split.foh,
         BOH: split.boh,
         Bar: split.bar,
@@ -118,27 +135,14 @@ export function MerchantDashboard() {
     }
   };
 
-  const handleExportCSV = () => {
-    const headers = ["Session", "Date", "Amount", "Tx Hash", "Status"];
-    const rows = tips.map((tip) => [
-      tip.session,
-      new Date(tip.created_at).toLocaleDateString(),
-      tip.amount,
-      tip.tx_hash,
-      tip.status,
-    ]);
-
-    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${merchantId}-tips-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("CSV exported successfully");
+  const handleExportCSV = async () => {
+    try {
+      const url = await exportMerchantTipsUrl(merchantId);
+      window.open(url, '_blank');
+      toast.success("Export started");
+    } catch {
+      toast.error("Export failed");
+    }
   };
 
   return (
@@ -153,7 +157,7 @@ export function MerchantDashboard() {
           <div>
             <p className="text-sm text-zinc-400">Merchant Dashboard</p>
             <h1 className="mt-1 text-4xl font-bold capitalize tracking-tight">
-              {merchantId.replace(/-/g, " ")}
+              {merchant ? merchant.name : merchantId.replace(/-/g, " ")}
             </h1>
           </div>
           <Button onClick={handleExportCSV}>
@@ -164,7 +168,7 @@ export function MerchantDashboard() {
 
         {/* Stats Grid */}
         <div className="mb-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat, i) => (
+          {statsCards.map((stat, i) => (
             <motion.div
               key={stat.title}
               initial={{ opacity: 0, y: 20 }}

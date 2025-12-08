@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { getResource, getMerchant, type Merchant } from "@/lib/api";
+import { getResource, getMerchant, getMerchants, type Merchant } from "@/lib/api";
 import { BillAmountForm } from "./bill-amount-form";
 import { TipSelectionForm } from "./tip-selection-form";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,10 @@ export function TipEntryForm() {
 
   React.useEffect(() => {
     async function loadData() {
+      if (!merchantId) {
+        setIsDataLoading(false);
+        return;
+      }
       setIsDataLoading(true);
       // We still fetch merchant details for the UI (logo, name)
       // In a real scenario, getResource might return this too, or we fetch it separately
@@ -145,6 +149,8 @@ export function TipEntryForm() {
 
     router.push(`/pay?${params.toString()}`);
   };
+
+
 
   if (isDataLoading && !merchant) {
     return (

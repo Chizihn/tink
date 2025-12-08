@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen flex-col bg-linear-to-b from-background to-black/50">
+    <div className="flex min-h-screen flex-col bg-linear-to-b from-background to-black/ ৫০">
       <Header />
       <main className="flex flex-1 flex-col items-center justify-center p-4">
         <TipEntryForm />
