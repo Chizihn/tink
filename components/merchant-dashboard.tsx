@@ -38,11 +38,15 @@ import {
   type Merchant,
 } from "@/lib/api";
 
-export function MerchantDashboard(): JSX.Element {
-  const params = useParams() as Record<string, string | undefined> | undefined;
-  // accept either params.merchantId or params.id (defensive)
-  const merchantId =
-    (params?.merchantId ?? params?.id ?? "") as string;
+export function MerchantDashboard() {
+  const params = useParams();
+  
+  // Safely extract merchantId with proper type checking
+  const merchantId = React.useMemo(() => {
+    if (!params) return "";
+    const id = params.merchantId || params.id;
+    return typeof id === "string" ? id : Array.isArray(id) ? id[0] : "";
+  }, [params]);
 
   const [merchant, setMerchant] = React.useState<Merchant | null>(null);
   const [tips, setTips] = React.useState<TipEvent[]>([]);
@@ -55,7 +59,6 @@ export function MerchantDashboard(): JSX.Element {
   });
 
   React.useEffect(() => {
-    // if merchantId is missing, avoid trying to load
     if (!merchantId) {
       console.warn("MerchantDashboard: missing merchantId param");
       setIsLoading(false);
@@ -66,12 +69,7 @@ export function MerchantDashboard(): JSX.Element {
 
     async function loadData() {
       try {
-        const [
-          merchantData,
-          tipsData,
-          statsData,
-          configData,
-        ] = await Promise.all([
+        const [merchantData, tipsData, statsData, configData] = await Promise.all([
           getMerchant(merchantId),
           getMerchantTips(merchantId),
           getMerchantStats(merchantId),
@@ -91,7 +89,9 @@ export function MerchantDashboard(): JSX.Element {
         });
       } catch (error) {
         console.error("Failed to load dashboard data", error);
-        toast.error("Failed to load dashboard data");
+        if (mounted) {
+          toast.error("Failed to load dashboard data");
+        }
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -103,19 +103,17 @@ export function MerchantDashboard(): JSX.Element {
     };
   }, [merchantId]);
 
-  // helper to safely format money
   const safeMoney = (value: unknown, fallback = "$0.00") => {
     const n = Number(value);
     return Number.isFinite(n) ? `$${n.toFixed(2)}` : fallback;
   };
 
-  // helper to safely format percent change
   const safePercent = (value: unknown, fallback = "+0%") => {
     const n = Number(value);
     return Number.isFinite(n) ? `${n >= 0 ? "+" : ""}${n.toFixed(1)}%` : fallback;
   };
 
-  const statsCards = [
+  const statsCards = React.useMemo(() => [
     {
       title: "Total Tips Today",
       value: safeMoney(stats?.totalTipsToday),
@@ -147,31 +145,31 @@ export function MerchantDashboard(): JSX.Element {
       icon: Users,
       color: "text-orange-400",
     },
-  ];
+  ], [stats]);
 
-  const handleSplitChange = (key: "foh" | "boh" | "bar", value: number) => {
-    // ensure numeric and in range
+  const handleSplitChange = React.useCallback((key: "foh" | "boh" | "bar", value: number) => {
     const safeVal = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
-    const newSplit = { ...split, [key]: safeVal };
-    const total = newSplit.foh + newSplit.boh + newSplit.bar;
+    
+    setSplit((prevSplit) => {
+      const newSplit = { ...prevSplit, [key]: safeVal };
+      const total = newSplit.foh + newSplit.boh + newSplit.bar;
 
-    if (total !== 100) {
-      const diff = total - 100;
-      const otherKeys = (["foh", "boh", "bar"] as const).filter((k) => k !== key);
-      const adjustEach = diff / otherKeys.length;
-      otherKeys.forEach((k) => {
-        // use Math.round to keep integers and clamp 0..100
-        newSplit[k] = Math.max(0, Math.min(100, Math.round(newSplit[k] - adjustEach)));
-      });
-      // Final correction to ensure sum is exactly 100
-      const sumOther = newSplit.foh + newSplit.boh + newSplit.bar - newSplit[key];
-      newSplit[key] = Math.max(0, 100 - sumOther);
-    }
+      if (total !== 100) {
+        const diff = total - 100;
+        const otherKeys = (["foh", "boh", "bar"] as const).filter((k) => k !== key);
+        const adjustEach = diff / otherKeys.length;
+        otherKeys.forEach((k) => {
+          newSplit[k] = Math.max(0, Math.min(100, Math.round(newSplit[k] - adjustEach)));
+        });
+        const sumOther = newSplit.foh + newSplit.boh + newSplit.bar - newSplit[key];
+        newSplit[key] = Math.max(0, 100 - sumOther);
+      }
 
-    setSplit(newSplit);
-  };
+      return newSplit;
+    });
+  }, []);
 
-  const handleUpdateSplit = async () => {
+  const handleUpdateSplit = React.useCallback(async () => {
     if (!merchantId) {
       toast.error("Missing merchant id");
       return;
@@ -187,9 +185,9 @@ export function MerchantDashboard(): JSX.Element {
       console.error("updateSplitConfig failed", e);
       toast.error("Failed to update split");
     }
-  };
+  }, [merchantId, split]);
 
-  const handleExportCSV = async () => {
+  const handleExportCSV = React.useCallback(async () => {
     if (!merchantId) {
       toast.error("Missing merchant id");
       return;
@@ -206,12 +204,11 @@ export function MerchantDashboard(): JSX.Element {
       console.error("exportMerchantTipsUrl failed", e);
       toast.error("Export failed");
     }
-  };
+  }, [merchantId]);
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-black via-zinc-950 to-black text-white">
+    <div className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-black text-white">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -220,8 +217,7 @@ export function MerchantDashboard(): JSX.Element {
           <div>
             <p className="text-sm text-zinc-400">Merchant Dashboard</p>
             <h1 className="mt-1 text-4xl font-bold capitalize tracking-tight">
-              {merchant?.name ??
-                (merchantId ? merchantId.replace(/-/g, " ") : "Merchant")}
+              {merchant?.name ?? (merchantId ? merchantId.replace(/-/g, " ") : "Merchant")}
             </h1>
           </div>
           <Button onClick={handleExportCSV} disabled={!merchantId}>
@@ -230,7 +226,6 @@ export function MerchantDashboard(): JSX.Element {
           </Button>
         </motion.div>
 
-        {/* Stats Grid */}
         <div className="mb-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {statsCards.map((stat, i) => (
             <motion.div
@@ -260,7 +255,6 @@ export function MerchantDashboard(): JSX.Element {
         </div>
 
         <div className="grid gap-8 lg:grid-cols-3">
-          {/* Recent Tips Table */}
           <div className="lg:col-span-2">
             <h2 className="mb-4 text-2xl font-semibold">Recent Tips</h2>
             <Card className="overflow-hidden border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
@@ -349,7 +343,6 @@ export function MerchantDashboard(): JSX.Element {
             </Card>
           </div>
 
-          {/* Tip Split Configuration */}
           <div>
             <h2 className="mb-4 text-2xl font-semibold">Tip Split Configuration</h2>
             <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
@@ -363,8 +356,8 @@ export function MerchantDashboard(): JSX.Element {
                       <span className="text-2xl font-bold text-red-500">{split[role]}%</span>
                     </div>
                     <Slider
-                      value={[Number(split[role] ?? 0)]}
-                      onValueChange={(v: number[]) => handleSplitChange(role, v?.[0] ?? 0)}
+                      value={[split[role]]}
+                      onValueChange={(v) => handleSplitChange(role, v[0])}
                       max={100}
                       step={1}
                       className="cursor-pointer"
@@ -392,7 +385,7 @@ export function MerchantDashboard(): JSX.Element {
                   </div>
                 </div>
 
-                <Button onClick={handleUpdateSplit} className="w-full " disabled={!merchantId}>
+                <Button onClick={handleUpdateSplit} className="w-full" disabled={!merchantId}>
                   Save Split Configuration
                 </Button>
               </CardContent>
