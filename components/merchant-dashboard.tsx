@@ -157,7 +157,7 @@ export function MerchantDashboard() {
           <div>
             <p className="text-sm text-zinc-400">Merchant Dashboard</p>
             <h1 className="mt-1 text-4xl font-bold capitalize tracking-tight">
-              {merchant ? merchant.name : merchantId.replace(/-/g, " ")}
+              {merchant ? merchant.name : merchantId?.replace(/-/g, " ") ?? "Merchant"}
             </h1>
           </div>
           <Button onClick={handleExportCSV}>
